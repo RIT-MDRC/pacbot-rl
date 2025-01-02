@@ -33,16 +33,22 @@ from policies import MaxQPolicy
 import safetensors.torch
 
 # Initialize the Q network for the old model.
-obs_shape = PacmanGym(random_start=True, random_ticks=True).obs_numpy().shape
-num_actions = 5
-q_net_old = models.QNetV2(obs_shape, num_actions).to("cpu")
-q_net_old.load_state_dict(safetensors.torch.load_file("checkpoints/q_net-old.safetensors"))
-q_net_old.eval()
-policy_old = MaxQPolicy(q_net_old)
+try:
+    obs_shape = PacmanGym(random_start=True, random_ticks=True).obs_numpy().shape
+    num_actions = 5
+    q_net_old = models.QNetV2(obs_shape, num_actions).to("cpu")
+    q_net_old.load_state_dict(safetensors.torch.load_file("checkpoints/q_net-old.safetensors"))
+    q_net_old.eval()
+    policy_old = MaxQPolicy(q_net_old)
+except:
+    policy_old = None
 
 
 def reset_env(env: PacmanGym) -> None:
     env.reset()
+
+    if policy_old is None:
+        return
 
     while not env.first_ai_done():
         obs = torch.from_numpy(env.obs_numpy()).to("cpu").unsqueeze(0)
