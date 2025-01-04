@@ -38,13 +38,14 @@ hyperparam_defaults = {
     "discount_factor": 0.99,
     "reward_scale": 1 / 50,
     "grad_clip_norm": 10_000,
-    "model": "QNetV2",
+    "model": "QNetV2"
 }
 
 parser = ArgumentParser()
 parser.add_argument("--eval", metavar="CHECKPOINT", default=None)
 parser.add_argument("--finetune", metavar="CHECKPOINT", default=None)
 parser.add_argument("--no-wandb", action="store_true")
+parser.add_argument("--no-eval", action="store_true")
 parser.add_argument("--checkpoint-dir", default="checkpoints")
 parser.add_argument("--device", default=None)
 for name, default_value in hyperparam_defaults.items():
@@ -307,10 +308,11 @@ else:
         pass
     wandb.finish()
 
-while True:
-    visualize_agent()
-    try:
-        input("Press enter to view another episode")
-    except KeyboardInterrupt:
-        print()
-        break
+if not args.no_eval:
+    while True:
+        visualize_agent()
+        try:
+            input("Press enter to view another episode")
+        except KeyboardInterrupt:
+            print()
+            break
