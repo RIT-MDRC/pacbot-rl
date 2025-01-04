@@ -40,7 +40,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - poetry run pacbot_rs/build_and_install.sh
+      - run: poetry run pacbot_rs/build_and_install.sh
 
       - run: poetry run -n cd python3 -m algorithms.train_dqn --device cpu --no-wandb --num_iters 3 --no-eval
         working-directory: src
