@@ -122,7 +122,8 @@ impl From<Action> for Direction {
 }
 
 impl<'source> FromPyObject<'source> for Action {
-    fn extract(ob: &'source PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'source, PyAny>) -> PyResult<Self> {
+        let ob = ob.as_borrowed();
         let index: u8 = ob.extract()?;
         Action::try_from_primitive(index).map_err(|_| PyValueError::new_err("Invalid action"))
     }
@@ -170,14 +171,14 @@ impl PacmanGym {
     pub fn new(configuration: Py<PyAny>) -> Self {
         let game_state = GameState { paused: false, ..GameState::new() };
         let configuration = Python::with_gil(|py| {
-            serde_pyobject::from_pyobject(&configuration.as_ref(py)).unwrap()
+            serde_pyobject::from_pyobject(configuration.bind(py).clone()).unwrap()
         });
         Self::new_with_state(configuration, game_state)
     }
 
     pub fn set_py_configuration(&mut self, configuration: Py<PyAny>) {
         let configuration = Python::with_gil(|py| {
-            serde_pyobject::from_pyobject(&configuration.as_ref(py)).unwrap()
+            serde_pyobject::from_pyobject(configuration.bind(py).clone()).unwrap()
         });
         self.config = configuration;
     }
@@ -349,7 +350,7 @@ impl PacmanGym {
 
     /// Returns an observation array/tensor constructed from the game state.
     pub fn obs_numpy(&self, py: Python<'_>) -> Py<PyArray3<f32>> {
-        self.obs().into_pyarray(py).into()
+        self.obs().into_pyarray_bound(py).into()
     }
 
     /// Prints a representation of the game state to standard output.

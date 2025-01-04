@@ -15,7 +15,7 @@ use mcts::MCTSContext;
 
 /// A Python module containing Rust implementations of the PacBot environment.
 #[pymodule]
-fn pacbot_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pacbot_rs(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PacmanGym>()?;
     m.add_class::<MCTSContext>()?;
     m.add_class::<AlphaZeroConfig>()?;
