@@ -9,6 +9,7 @@ use crate::{
     env::PacmanGym,
     mcts::{eval_obs_batch, LeafEvaluation, MCTSContext},
 };
+use crate::env::PacmanGymConfiguration;
 
 #[derive(Clone, Copy, Debug)]
 #[pyclass(get_all, set_all)]
@@ -69,7 +70,11 @@ impl ExperienceCollector {
     pub fn new(evaluator: PyObject, config: AlphaZeroConfig) -> PyResult<Self> {
         let mcts_envs = (0..config.num_parallel_envs)
             .map(|_| {
-                let mut env = PacmanGym::new(true, false);
+                let mut env = PacmanGym::new_with_config(PacmanGymConfiguration {
+                    random_start: true,
+                    random_ticks: false,
+                    ..Default::default()
+                });
                 env.reset();
                 Ok(ParallelEnv {
                     mcts_context: MCTSContext::new(env, evaluator.clone())?,

@@ -69,7 +69,7 @@ wandb.init(
 
 
 # Initialize the network.
-obs_shape = PacmanGym(random_start=True).obs_numpy().shape
+obs_shape = PacmanGym({"random_start": True}).obs_numpy().shape
 num_actions = 5
 model_class = getattr(models, wandb.config.model)
 model = model_class(obs_shape, num_actions + 1).to(device)
@@ -109,7 +109,7 @@ def evaluate_episode(max_steps: int = 1000, greedy: bool = True) -> tuple[int, i
     """
     model.eval()
 
-    env = PacmanGym(random_start=True)
+    env = PacmanGym({"random_start": True})
     env.reset()
     if greedy:
         for step_num in range(1, max_steps + 1):
@@ -266,7 +266,7 @@ def train():
 def visualize_agent():
     model.eval()
 
-    env = PacmanGym(random_start=True)
+    env = PacmanGym({"random_start": True})
     env.reset()
     mc = MCTSContext(env, model_evaluator)
     mc.reset()

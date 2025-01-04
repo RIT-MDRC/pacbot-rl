@@ -34,7 +34,7 @@ import safetensors.torch
 
 # Initialize the Q network for the old model.
 try:
-    obs_shape = PacmanGym(random_start=True, random_ticks=True).obs_numpy().shape
+    obs_shape = PacmanGym({"random_start": True, "random_ticks": True}).obs_numpy().shape
     num_actions = 5
     q_net_old = models.QNetV2(obs_shape, num_actions).to("cpu")
     q_net_old.load_state_dict(safetensors.torch.load_file("checkpoints/q_net-old.safetensors"))
@@ -80,7 +80,7 @@ class ReplayBuffer(Generic[P]):
         # Initialize the environments.
         self._envs = [
             pacbot_rs.PacmanGym(
-                random_start=i < num_parallel_envs * random_start_proportion, random_ticks=True
+                {"random_start":i < num_parallel_envs * random_start_proportion, "random_ticks": True}
             )
             for i in range(num_parallel_envs)
         ]

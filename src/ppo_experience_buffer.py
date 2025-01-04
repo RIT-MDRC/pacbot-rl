@@ -52,7 +52,7 @@ class ExperienceBuffer:
         self.reward_scale = reward_scale
 
         # Initialize the environments.
-        self._envs = [pacbot_rs.PacmanGym(random_start=True) for _ in range(num_parallel_envs)]
+        self._envs = [pacbot_rs.PacmanGym({"random_start": True}) for _ in range(num_parallel_envs)]
         for env in self._envs:
             env.reset()
         self._last_obs = self._make_current_obs()

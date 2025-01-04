@@ -1,7 +1,9 @@
 use itertools::izip;
 use ndarray::prelude::*;
 use num_enum::TryFromPrimitive;
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+};
 use ordered_float::NotNan;
 use pyo3::prelude::*;
 use rand_distr::{Dirichlet, Distribution};
@@ -239,7 +241,7 @@ impl MCTSContext {
     /// Returns the observation at the current root node.
     #[must_use]
     pub fn root_obs_numpy(&self, py: Python<'_>) -> Py<PyArray3<f32>> {
-        self.env.obs().into_pyarray(py).into()
+        self.env.obs().into_pyarray_bound(py).into()
     }
 }
 
@@ -400,8 +402,8 @@ pub fn eval_obs_batch<'py>(
     evaluator: &PyObject,
 ) -> PyResult<(PyReadonlyArray1<'py, f32>, PyReadonlyArray2<'py, f32>)> {
     // Convert obs and action_mask into NumPy arrays.
-    let obs_numpy = obs.into_pyarray(py);
-    let action_mask_numpy = action_mask.into_pyarray(py);
+    let obs_numpy = obs.into_pyarray_bound(py);
+    let action_mask_numpy = action_mask.into_pyarray_bound(py);
 
     // Run the evaluator.
     let result = evaluator.call1(py, (obs_numpy, action_mask_numpy))?;
@@ -409,8 +411,8 @@ pub fn eval_obs_batch<'py>(
     // Cast the result to the expected types.
     let (value, policy): (PyObject, PyObject) = result.extract(py)?;
     let value: &PyArray1<f32> = value.extract(py)?;
-    let value = IntoPy::<Py<PyArray1<f32>>>::into_py(value, py).into_ref(py).readonly();
+    let value = IntoPy::<Py<PyArray1<f32>>>::into_py(value, py).into_bound(py).readonly();
     let policy: &PyArray2<f32> = policy.extract(py)?;
-    let policy = IntoPy::<Py<PyArray2<f32>>>::into_py(policy, py).into_ref(py).readonly();
+    let policy = IntoPy::<Py<PyArray2<f32>>>::into_py(policy, py).into_bound(py).readonly();
     Ok((value, policy))
 }
