@@ -34,10 +34,10 @@ import safetensors.torch
 
 # Initialize the Q network for the old model.
 try:
-    obs_shape = PacmanGym({"random_start": True, "random_ticks": True}).obs_numpy().shape
+    obs_shape = PacmanGym({"random_start": True, "random_ticks": True, "obs_ignore_super_pellets": True,}).obs_numpy().shape
     num_actions = 5
     q_net_old = models.QNetV2(obs_shape, num_actions).to("cpu")
-    q_net_old.load_state_dict(safetensors.torch.load_file("checkpoints/q_net-old.safetensors"))
+    q_net_old.load_state_dict(safetensors.torch.load_file("checkpoints/oldqnet.safetensors"))
     q_net_old.eval()
     policy_old = MaxQPolicy(q_net_old)
 except:

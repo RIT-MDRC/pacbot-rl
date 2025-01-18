@@ -331,6 +331,11 @@ impl PacmanGym {
             && self.game_state.ghosts.iter().all(|g| !g.is_frightened())
     }
 
+    pub fn all_ghosts_trapped(&self) -> bool {
+        // are all ghosts contained in the pen?
+        self.game_state.ghosts.iter().all(|g| !g.is_trapped())
+    }
+
     pub fn remaining_pellets(&self) -> u16 {
         self.game_state.get_num_pellets()
     }
