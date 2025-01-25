@@ -331,9 +331,14 @@ impl PacmanGym {
             && self.game_state.ghosts.iter().all(|g| !g.is_frightened())
     }
 
-    pub fn all_ghosts_trapped(&self) -> bool {
-        // are all ghosts contained in the pen?
+    pub fn all_ghosts_freed(&self) -> bool {
+        // are all ghosts freed from pen?
         self.game_state.ghosts.iter().all(|g| !g.is_trapped())
+    }
+
+    pub fn all_ghosts_not_frightened(&self) -> bool {
+        // are all ghosts not frightened?
+        self.game_state.ghosts.iter().all(|g| !g.is_frightened())
     }
 
     pub fn remaining_pellets(&self) -> u16 {
