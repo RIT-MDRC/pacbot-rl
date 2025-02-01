@@ -123,7 +123,7 @@ class ReplayBuffer(Generic[P]):
                 action_values = super_pellet_policy(obs.unsqueeze(0)).squeeze(0)
                 action_values[~torch.tensor(env.action_mask())] = -torch.inf
                 action = action_values.argmax().item()
-                ..., done = gym.step(action)
+                reward, done = gym.step(action)
                 if done is None:
                     reset_env(env)
 
