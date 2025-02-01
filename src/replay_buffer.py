@@ -119,11 +119,9 @@ class ReplayBuffer(Generic[P]):
         #check if something is not in purgatory mode by seeing if all ghosts are out or if it is still chasing
         for env in self._envs:
             if env.all_ghosts_freed() or not env.all_ghosts_not_frightened(): 
-                obs = torch.from_numpy(env.obs_numpy()).to(self.device)
-                action_values = super_pellet_policy(obs.unsqueeze(0)).squeeze(0)
-                action_values[~torch.tensor(env.action_mask())] = -torch.inf
-                action = action_values.argmax().item()
-                reward, done = gym.step(action)
+                obs = torch.from_numpy(env.obs_numpy()).to("cpu").unsqueeze(0)
+                action_mask = torch.tensor(env.action_mask(), device="cpu").unsqueeze(0)
+                _, done = env.step(super_pellet_policy(obs, action_mask).item())
                 if done is None:
                     reset_env(env)
 
