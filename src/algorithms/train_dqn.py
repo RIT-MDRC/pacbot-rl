@@ -268,7 +268,15 @@ def train():
 
 @torch.no_grad()
 def visualize_agent():
-    gym = PacmanGym({"random_start": False, "random_ticks": False})
+
+    super_pellet_mode = False #default mode is purgatory mode, waits until ghosts are out for super pellet mode
+    num_actions = 5
+    super_pellet_qnet = models.QNetV2(obs_shape, num_actions).to("cpu")
+    super_pellet_qnet.load_state_dict(safetensors.torch.load_file("checkpoints/superpelletmode.safetensors")) #super pellet mode - eating super pellets and ghosts
+    super_pellet_qnet.eval()
+    super_pellet_policy = MaxQPolicy(super_pellet_qnet)
+   
+    gym = PacmanGym({"random_start": False, "random_ticks": False, "obs_ignore_super_pellets": True,})
     reset_env(gym)
 
     q_net.eval()
@@ -280,9 +288,15 @@ def visualize_agent():
 
     for step_num in itertools.count(1):
         time.sleep(0.1)
-
+        #check if we want to go into super pellet mode
+        if gym.all_ghosts_freed() and not super_pellet_mode:
+            gym.set_py_configuration({"random_start": False, "random_ticks": False}) #stop ignoring super pellets
+            super_pellet_mode = True
+        elif super_pellet_mode and not gym.all_ghosts_freed() and gym.all_ghosts_not_frightened(): #go back to purgatory mode if all ghosts aren't frightened
+            gym.set_py_configuration({"random_start": True, "random_ticks": True, "obs_ignore_super_pellets": True,}) #when leaving super pellet mode, go back to ignoring super pellets
+            super_pellet_mode = False
         obs = torch.from_numpy(gym.obs_numpy()).to(device)
-        action_values = q_net(obs.unsqueeze(0)).squeeze(0)
+        action_values = super_pellet_policy(obs.unsqueeze(0)).squeeze(0) if super_pellet_mode else q_net(obs.unsqueeze(0)).squeeze(0)
         action_values[~torch.tensor(gym.action_mask())] = -torch.inf
         action = action_values.argmax().item()
         with np.printoptions(precision=4, suppress=True):
