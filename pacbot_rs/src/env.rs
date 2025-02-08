@@ -358,6 +358,19 @@ impl PacmanGym {
         ]
     }
 
+    /// Returns the action mask that is `True` for currently-valid actions and
+    /// `False` for currently-invalid actions.
+    pub fn purgatory_action_mask(&self) -> [bool; 5] {
+        let p = self.game_state.pacman_loc;
+        [
+            true,
+            !self.game_state.wall_at((p.row + 1, p.col)) && !(((p.row + 1 == 3) || (p.row + 1 == 23)) && ((p.col == 1) || (p.col == 26))),
+            !self.game_state.wall_at((p.row - 1, p.col)) && !(((p.row - 1 == 3) || (p.row - 1 == 23)) && ((p.col == 1) || (p.col == 26))),
+            !self.game_state.wall_at((p.row, p.col - 1)) && !(((p.row == 3) || (p.row == 23)) && ((p.col - 1 == 1) || (p.col - 1 == 26))),
+            !self.game_state.wall_at((p.row, p.col + 1)) && !(((p.row == 3) || (p.row == 23)) && ((p.col + 1 == 1) || (p.col + 1 == 26))),
+        ]
+    }
+
     /// Returns an observation array/tensor constructed from the game state.
     pub fn obs_numpy(&self, py: Python<'_>) -> Py<PyArray3<f32>> {
         self.obs().into_pyarray_bound(py).into()

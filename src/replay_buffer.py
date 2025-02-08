@@ -44,6 +44,13 @@ except:
     policy_old = None
 
 
+num_actions = 5
+super_pellet_qnet = models.QNetV2(obs_shape, num_actions).to("cpu")
+super_pellet_qnet.load_state_dict(safetensors.torch.load_file("checkpoints/superpelletmode.safetensors")) #super pellet mode - eating super pellets and ghosts
+super_pellet_qnet.eval()
+super_pellet_policy = MaxQPolicy(super_pellet_qnet)
+
+
 def reset_env(env: PacmanGym) -> None:
     env.reset()
 
@@ -109,13 +116,6 @@ class ReplayBuffer(Generic[P]):
     def generate_experience_step(self) -> None:
         """Generates one step of experience for each parallel env and adds them to the buffer."""
 
-        num_actions = 5
-        super_pellet_qnet = models.QNetV2(obs_shape, num_actions).to("cpu")
-        super_pellet_qnet.load_state_dict(safetensors.torch.load_file("checkpoints/superpelletmode.safetensors")) #super pellet mode - eating super pellets and ghosts
-        super_pellet_qnet.eval()
-        super_pellet_policy = MaxQPolicy(super_pellet_qnet)
-   
-
         #check if something is not in purgatory mode by seeing if all ghosts are out or if it is still chasing
         for env in self._envs:
             if env.all_ghosts_freed() or not env.all_ghosts_not_frightened(): 
@@ -127,7 +127,7 @@ class ReplayBuffer(Generic[P]):
 
 
         # Choose an action using the provided policy.
-        action_masks = [env.action_mask() for env in self._envs]
+        action_masks = [env.purgatory_action_mask() for env in self._envs]
         action_masks = torch.from_numpy(np.stack(action_masks)).to(self.device)
         actions = self.policy(self._last_obs, action_masks)
 
