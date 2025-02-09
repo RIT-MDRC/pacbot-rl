@@ -1,14 +1,13 @@
 from collections import deque
 import random
-from typing import Generic, NamedTuple, Optional, TypeVar
+from typing import Generic, NamedTuple, Optional
 
 import torch
 
 import pacbot_rs
 from debug_probe_envs import *
 
-from policies import Policy
-
+from utils import reset_env, NUM_ACTIONS, P
 
 class ReplayItem(NamedTuple):
     obs: torch.Tensor
@@ -18,54 +17,11 @@ class ReplayItem(NamedTuple):
     next_action_mask: list[bool]
 
 
-P = TypeVar("P", bound=Policy)
-
-
 # DebugProbeGym = lambda: ConstantRewardSequenceProbeGym([0] * 100 + [50])
 # DebugProbeGym = lambda: PredictDelayedRewardProbeGym(
 #     1, keep_giving_answer=False, tell_if_incorrect=False
 # )
 DebugProbeGym = CartPoleGym
-
-from pacbot_rs import PacmanGym
-import models
-from policies import MaxQPolicy
-import safetensors.torch
-
-# Initialize the Q network for the old model.
-try:
-    obs_shape = PacmanGym({"random_start": True, "random_ticks": True}).obs_numpy().shape
-    num_actions = 5
-    q_net_old = models.QNetV2(obs_shape, num_actions).to("cpu")
-    q_net_old.load_state_dict(safetensors.torch.load_file("checkpoints/q_net-old.safetensors"))
-    q_net_old.eval()
-    policy_old = MaxQPolicy(q_net_old)
-except:
-    policy_old = None
-
-
-num_actions = 5
-super_pellet_qnet = models.QNetV2(obs_shape, num_actions).to("cpu")
-super_pellet_qnet.load_state_dict(safetensors.torch.load_file("checkpoints/superpelletmode.safetensors")) #super pellet mode - eating super pellets and ghosts
-super_pellet_qnet.eval()
-super_pellet_policy = MaxQPolicy(super_pellet_qnet)
-
-
-def reset_env(env: PacmanGym) -> None:
-    env.reset()
-
-    if policy_old is None:
-        return
-
-    while not env.first_ai_done():
-        obs = torch.from_numpy(env.obs_numpy()).to("cpu").unsqueeze(0)
-        action_mask = torch.tensor(env.action_mask(), device="cpu").unsqueeze(0)
-        _, done = env.step(policy_old(obs, action_mask).item())
-
-        if done:
-            # the first ai died :( try again
-            env.reset()
-
 
 class ReplayBuffer(Generic[P]):
     """
@@ -103,10 +59,6 @@ class ReplayBuffer(Generic[P]):
     def obs_shape(self) -> torch.Size:
         return self._last_obs.shape[1:]
 
-    @property
-    def num_actions(self) -> int:
-        return 5
-
     def fill(self) -> None:
         """Generates experience until the buffer is filled to capacity."""
         while len(self._buffer) < self._buffer.maxlen:
@@ -137,7 +89,7 @@ class ReplayBuffer(Generic[P]):
             reward, done = env.step(action)
             if done:
                 next_obs = None
-                next_action_mask = [False] * self.num_actions
+                next_action_mask = [False] * NUM_ACTIONS
             else:
                 next_obs = torch.from_numpy(env.obs_numpy()).to(self.device)
                 next_action_mask = env.action_mask()

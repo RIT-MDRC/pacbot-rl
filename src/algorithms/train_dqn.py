@@ -18,9 +18,9 @@ from pacbot_rs import PacmanGym
 
 import models
 from policies import EpsilonGreedy, MaxQPolicy
-from replay_buffer import ReplayBuffer, reset_env
+from replay_buffer import ReplayBuffer
 from timing import time_block
-from utils import lerp
+from utils import lerp, reset_env, step_env
 
 
 hyperparam_defaults = {
@@ -76,7 +76,7 @@ wandb.init(
 
 
 # Initialize the Q network.
-obs_shape = PacmanGym({"random_start": True, "random_ticks": True}).obs_numpy().shape
+obs_shape = PacmanGym({}).obs_numpy().shape
 num_actions = 5
 model_class = getattr(models, wandb.config.model)
 q_net = model_class(obs_shape, num_actions).to(device)
@@ -101,9 +101,7 @@ def evaluate_episode(max_steps: int = 1000) -> tuple[int, int, bool, int, int]:
     policy = MaxQPolicy(q_net)
 
     for step_num in range(1, max_steps + 1):
-        obs = torch.from_numpy(gym.obs_numpy()).to(device).unsqueeze(0)
-        action_mask = torch.tensor(gym.action_mask(), device=device).unsqueeze(0)
-        _, done = gym.step(policy(obs, action_mask).item())
+        _, done = step_env(gym, policy)
 
         if done:
             break
