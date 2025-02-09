@@ -13,34 +13,42 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
+#[pyclass]
 pub struct PacmanGymConfiguration {
     /// If true, other "random" options apply; in addition:
     /// - Pacman starting position is randomized
     /// - Sometimes some of the pellets are wiped from the board
+    #[pyo3(get, set)]
     pub random_start: bool,
     /// If this && `random_start`, randomize the ghosts' starting positions
+    #[pyo3(get, set)]
     pub randomize_ghosts: bool,
 
     /// If true, randomize pacman speed per game, else [`NORMAL_TICKS_PER_STEP`]
+    #[pyo3(get, set)]
     pub random_ticks: bool,
     /// If `random_ticks`, the minimum number of game ticks per pacman action (randomized per game)
     ///
     /// - Default 4 (3 gu/s), meaning the game steps 4 times for each action Pacman takes
     /// - See [`NORMAL_TICKS_PER_STEP`]
+    #[pyo3(get, set)]
     pub random_ticks_per_step_min: u32,
     /// If `random_ticks`, the maximum number of game ticks per pacman action (randomized per game)
     ///
     /// - Default 14 (~0.86 gu/s), meaning the game steps 14 times for each action Pacman takes
     /// - See [`NORMAL_TICKS_PER_STEP`]
+    #[pyo3(get, set)]
     pub random_ticks_per_step_max: u32,
 
     /// If true, regular pellets should never appear in the observation, even if present in the game
     ///
     /// Note: super pellets may still appear
+    #[pyo3(get, set)]
     pub obs_ignore_regular_pellets: bool,
     /// If true, super pellets should never appear in the observation, even if present in the game
     ///
     /// Note: regular pellets may still appear
+    #[pyo3(get, set)]
     pub obs_ignore_super_pellets: bool,
 }
 
@@ -57,6 +65,16 @@ impl Default for PacmanGymConfiguration {
             obs_ignore_regular_pellets: false,
             obs_ignore_super_pellets: false,
         }
+    }
+}
+
+#[pymethods]
+impl PacmanGymConfiguration {
+    #[new]
+    pub fn new(configuration: Py<PyAny>) -> Self {
+        Python::with_gil(|py| {
+            serde_pyobject::from_pyobject(configuration.bind(py).clone()).unwrap()
+        })
     }
 }
 
@@ -141,10 +159,10 @@ pub struct PacmanGym {
     pub game_state: GameState,
     last_score: u16,
     last_action: Action,
+    #[pyo3(get, set)]
+    purgatory_pellets: u16,
 
     ticks_per_step: u32,
-
-    pub config: PacmanGymConfiguration,
 }
 
 fn modify_bit_u32(num: &mut u32, bit_idx: usize, bit_val: bool) {
@@ -168,40 +186,40 @@ fn loc_to_pos(loc: LocationState) -> Option<(usize, usize)> {
 #[pymethods]
 impl PacmanGym {
     #[new]
-    pub fn new(configuration: Py<PyAny>) -> Self {
-        let game_state = GameState { paused: false, ..GameState::new() };
-        let configuration = Python::with_gil(|py| {
-            serde_pyobject::from_pyobject(configuration.bind(py).clone()).unwrap()
-        });
-        Self::new_with_state(configuration, game_state)
+    pub fn new(config: &PacmanGymConfiguration) -> Self {
+        let mut s = Self {
+            purgatory_pellets: 0,
+            last_score: 0,
+            last_action: Action::Stay,
+            game_state: GameState::new(),
+            ticks_per_step: NORMAL_TICKS_PER_STEP,
+        };
+        s.reset(config);
+        s
     }
 
-    pub fn set_py_configuration(&mut self, configuration: Py<PyAny>) {
-        let configuration = Python::with_gil(|py| {
-            serde_pyobject::from_pyobject(configuration.bind(py).clone()).unwrap()
-        });
-        self.config = configuration;
-    }
-
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self, config: &PacmanGymConfiguration) {
+        self.purgatory_pellets = 0;
         self.last_score = 0;
+        self.last_action = Action::Stay;
         self.game_state = GameState::new();
+        self.game_state.paused = false;
 
         let rng = &mut rand::thread_rng();
 
-        if self.config.random_ticks {
-            self.ticks_per_step = rng.gen_range(
-                self.config.random_ticks_per_step_min..=self.config.random_ticks_per_step_max,
-            );
-        }
+        self.ticks_per_step = if config.random_ticks {
+            rng.gen_range(config.random_ticks_per_step_min..=config.random_ticks_per_step_max)
+        } else {
+            NORMAL_TICKS_PER_STEP
+        };
 
-        if self.config.random_start {
+        if config.random_start {
             let mut random_pos = || *NODE_COORDS.choose(rng).unwrap();
 
             let pac_random_pos = random_pos();
             self.game_state.pacman_loc = LocationState::new(pac_random_pos.0, pac_random_pos.1, Up);
 
-            if self.config.randomize_ghosts {
+            if config.randomize_ghosts {
                 for ghost in &mut self.game_state.ghosts {
                     ghost.trapped_steps = 0;
                     let ghost_random_pos = random_pos();
@@ -253,14 +271,12 @@ impl PacmanGym {
                 }
             }
         }
-
-        self.last_action = Action::Stay;
-        self.game_state.paused = false;
     }
 
     /// Performs an action and steps the environment.
     /// Returns (reward, done).
     pub fn step(&mut self, action: Action) -> (i32, bool) {
+        let pellets_before = self.remaining_pellets();
         // Update Pacman pos
         self.move_one_cell(action);
 
@@ -281,6 +297,11 @@ impl PacmanGym {
         let game_state = &self.game_state;
 
         let done = self.is_done();
+
+        let pellets_after = self.remaining_pellets();
+        if !self.all_ghosts_freed() && self.all_ghosts_not_frightened() {
+            self.purgatory_pellets += pellets_after.saturating_sub(pellets_before);
+        }
 
         // The reward is raw difference in game score, minus a penalty for dying or
         // plus a bonus for clearing the board.
@@ -364,16 +385,20 @@ impl PacmanGym {
         let p = self.game_state.pacman_loc;
         [
             true,
-            !self.game_state.wall_at((p.row + 1, p.col)) && !(((p.row + 1 == 3) || (p.row + 1 == 23)) && ((p.col == 1) || (p.col == 26))),
-            !self.game_state.wall_at((p.row - 1, p.col)) && !(((p.row - 1 == 3) || (p.row - 1 == 23)) && ((p.col == 1) || (p.col == 26))),
-            !self.game_state.wall_at((p.row, p.col - 1)) && !(((p.row == 3) || (p.row == 23)) && ((p.col - 1 == 1) || (p.col - 1 == 26))),
-            !self.game_state.wall_at((p.row, p.col + 1)) && !(((p.row == 3) || (p.row == 23)) && ((p.col + 1 == 1) || (p.col + 1 == 26))),
+            !self.game_state.wall_at((p.row + 1, p.col))
+                && !(((p.row + 1 == 3) || (p.row + 1 == 23)) && ((p.col == 1) || (p.col == 26))),
+            !self.game_state.wall_at((p.row - 1, p.col))
+                && !(((p.row - 1 == 3) || (p.row - 1 == 23)) && ((p.col == 1) || (p.col == 26))),
+            !self.game_state.wall_at((p.row, p.col - 1))
+                && !(((p.row == 3) || (p.row == 23)) && ((p.col - 1 == 1) || (p.col - 1 == 26))),
+            !self.game_state.wall_at((p.row, p.col + 1))
+                && !(((p.row == 3) || (p.row == 23)) && ((p.col + 1 == 1) || (p.col + 1 == 26))),
         ]
     }
 
     /// Returns an observation array/tensor constructed from the game state.
-    pub fn obs_numpy(&self, py: Python<'_>) -> Py<PyArray3<f32>> {
-        self.obs().into_pyarray_bound(py).into()
+    pub fn obs_numpy(&self, py: Python<'_>, config: &PacmanGymConfiguration) -> Py<PyArray3<f32>> {
+        self.obs(config).into_pyarray_bound(py).into()
     }
 
     /// Prints a representation of the game state to standard output.
@@ -429,22 +454,6 @@ impl PacmanGym {
 }
 
 impl PacmanGym {
-    pub fn new_with_config(configuration: PacmanGymConfiguration) -> Self {
-        let game_state = GameState { paused: false, ..GameState::new() };
-        Self::new_with_state(configuration, game_state)
-    }
-
-    pub fn new_with_state(configuration: PacmanGymConfiguration, game_state: GameState) -> Self {
-        Self {
-            last_score: 0,
-            last_action: Action::Stay,
-            game_state,
-            ticks_per_step: NORMAL_TICKS_PER_STEP,
-
-            config: configuration,
-        }
-    }
-
     pub fn set_state(&mut self, new_state: GameState, ticks_per_step: u32) {
         self.game_state = new_state;
         self.ticks_per_step = ticks_per_step;
@@ -468,7 +477,7 @@ impl PacmanGym {
     }
 
     /// Returns an observation array/tensor constructed from the game state.
-    pub fn obs(&self) -> Array3<f32> {
+    pub fn obs(&self, config: &PacmanGymConfiguration) -> Array3<f32> {
         let game_state = &self.game_state;
         let mut obs_array = Array::zeros(OBS_SHAPE);
         let (mut wall, mut reward, mut pacman, mut ghost, mut last_ghost, mut state) = obs_array
@@ -487,13 +496,13 @@ impl PacmanGym {
                 wall[(col, obs_row)] = game_state.wall_at((row as i8, col as i8)) as u8 as f32;
                 reward[(col, obs_row)] = if game_state.pellet_at((row as i8, col as i8)) {
                     (if ((row == 3) || (row == 23)) && ((col == 1) || (col == 26)) {
-                        if self.config.obs_ignore_super_pellets {
+                        if config.obs_ignore_super_pellets {
                             0
                         } else {
                             variables::SUPER_PELLET_POINTS
                         }
                     } else {
-                        if self.config.obs_ignore_regular_pellets {
+                        if config.obs_ignore_regular_pellets {
                             0
                         } else {
                             variables::PELLET_POINTS
@@ -556,7 +565,7 @@ impl PacmanGym {
         for row in 0..31 {
             for col in 0..28 {
                 let obs_row = 31 - row - 1;
-                if !self.config.obs_ignore_super_pellets
+                if !config.obs_ignore_super_pellets
                     && game_state.pellet_at((row as i8, col as i8))
                     && ((row == 3) || (row == 23))
                     && ((col == 1) || (col == 26))

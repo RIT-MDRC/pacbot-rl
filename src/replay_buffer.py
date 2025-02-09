@@ -3,11 +3,11 @@ import random
 from typing import Generic, NamedTuple, Optional
 
 import torch
+import numpy as np
 
 import pacbot_rs
-from debug_probe_envs import *
 
-from utils import reset_env, NUM_ACTIONS, P
+from utils import reset_env, NUM_ACTIONS, P, REPLAY_BUFFER_OBS_GYM_CONFIGURATION, DEFAULT_GYM_CONFIGURATION, replay_buffer_action_mask, step_while_not_policy
 
 class ReplayItem(NamedTuple):
     obs: torch.Tensor
@@ -15,13 +15,6 @@ class ReplayItem(NamedTuple):
     reward: int
     next_obs: Optional[torch.Tensor]
     next_action_mask: list[bool]
-
-
-# DebugProbeGym = lambda: ConstantRewardSequenceProbeGym([0] * 100 + [50])
-# DebugProbeGym = lambda: PredictDelayedRewardProbeGym(
-#     1, keep_giving_answer=False, tell_if_incorrect=False
-# )
-DebugProbeGym = CartPoleGym
 
 class ReplayBuffer(Generic[P]):
     """
@@ -43,16 +36,15 @@ class ReplayBuffer(Generic[P]):
         # Initialize the environments.
         self._envs = [
             pacbot_rs.PacmanGym(
-                {"random_start":i < num_parallel_envs * random_start_proportion, "random_ticks": True}
+                # pacbot_rs.PacmanGymConfiguration({"random_start":i < num_parallel_envs * random_start_proportion, "random_ticks": True})
+                DEFAULT_GYM_CONFIGURATION
             )
             for i in range(num_parallel_envs)
         ]
-        for env in self._envs:
-            reset_env(env)
         self._last_obs = self._make_current_obs()
 
     def _make_current_obs(self) -> torch.Tensor:
-        obs = [env.obs_numpy() for env in self._envs]
+        obs = [env.obs_numpy(REPLAY_BUFFER_OBS_GYM_CONFIGURATION) for env in self._envs]
         return torch.from_numpy(np.stack(obs)).to(self.device)
 
     @property
@@ -68,18 +60,12 @@ class ReplayBuffer(Generic[P]):
     def generate_experience_step(self) -> None:
         """Generates one step of experience for each parallel env and adds them to the buffer."""
 
-        #check if something is not in purgatory mode by seeing if all ghosts are out or if it is still chasing
+        # if other models should take actions in the current state of the games, let them go first
         for env in self._envs:
-            if env.all_ghosts_freed() or not env.all_ghosts_not_frightened(): 
-                obs = torch.from_numpy(env.obs_numpy()).to("cpu").unsqueeze(0)
-                action_mask = torch.tensor(env.action_mask(), device="cpu").unsqueeze(0)
-                _, done = env.step(super_pellet_policy(obs, action_mask).item())
-                if done is None:
-                    reset_env(env)
-
+            step_while_not_policy(env, self.device, reset_if_necessary=True)
 
         # Choose an action using the provided policy.
-        action_masks = [env.purgatory_action_mask() for env in self._envs]
+        action_masks = [replay_buffer_action_mask(env) for env in self._envs]
         action_masks = torch.from_numpy(np.stack(action_masks)).to(self.device)
         actions = self.policy(self._last_obs, action_masks)
 
@@ -91,8 +77,8 @@ class ReplayBuffer(Generic[P]):
                 next_obs = None
                 next_action_mask = [False] * NUM_ACTIONS
             else:
-                next_obs = torch.from_numpy(env.obs_numpy()).to(self.device)
-                next_action_mask = env.action_mask()
+                next_obs = torch.from_numpy(env.obs_numpy(REPLAY_BUFFER_OBS_GYM_CONFIGURATION)).to(self.device)
+                next_action_mask = replay_buffer_action_mask(env)
 
             # # Subsample to focus training on end-game states.
             # keep_prob = 1.0 if env.remaining_pellets() < 140 else 0.1
@@ -106,8 +92,8 @@ class ReplayBuffer(Generic[P]):
 
             # Reset the environment if necessary and update last_obs.
             if next_obs is None:
-                reset_env(env)
-                next_obs_stack.append(torch.from_numpy(env.obs_numpy()).to(self.device))
+                reset_env(env, REPLAY_BUFFER_OBS_GYM_CONFIGURATION)
+                next_obs_stack.append(torch.from_numpy(env.obs_numpy(REPLAY_BUFFER_OBS_GYM_CONFIGURATION)).to(self.device))
             else:
                 next_obs_stack.append(next_obs)
 
