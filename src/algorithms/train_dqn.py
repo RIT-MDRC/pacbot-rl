@@ -85,11 +85,11 @@ if args.finetune:
 
 
 @torch.no_grad()
-def evaluate_episode(max_steps: int = 1000) -> tuple[int, int, bool, int, int, int]:
+def evaluate_episode(max_steps: int = 1000) -> tuple[int, int, bool, int, int, int, float]:
     """
     Performs a single evaluation episode.
 
-    Returns (score, total_steps, is_board_cleared, pellets_start, pellets_end, purgatory_pellets).
+    Returns (score, total_steps, is_board_cleared, pellets_start, pellets_end, purgatory_pellets, ghost_proximities).
     """
     gym = PacmanGym(DETERMINISTIC_START_CONFIGURATION)
     pellets_start = gym.remaining_pellets()
@@ -102,7 +102,7 @@ def evaluate_episode(max_steps: int = 1000) -> tuple[int, int, bool, int, int, i
     is_board_cleared = done and gym.lives() == 3
     pellets_end = 0 if is_board_cleared else gym.remaining_pellets()
 
-    return (gym.score(), step_num, is_board_cleared, pellets_start, pellets_end, gym.purgatory_pellets)
+    return (gym.score(), step_num, is_board_cleared, pellets_start, pellets_end, gym.purgatory_pellets, gym.ghost_proximities)
 
 
 def train():
@@ -219,6 +219,7 @@ def train():
                         pellets_start,
                         pellets_end,
                         purgatory_pellets,
+                        ghost_proximities,
                     ) = evaluate_episode()
                     metrics.update(
                         eval_episode_score=eval_episode_score,
@@ -227,6 +228,7 @@ def train():
                         eval_pellets_start=pellets_start,
                         eval_pellets_end=pellets_end,
                         purgatory_pellets=purgatory_pellets,
+                        ghost_proximities=ghost_proximities,
                     )
             wandb.log(metrics)
 

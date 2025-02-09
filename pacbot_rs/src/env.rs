@@ -1,4 +1,4 @@
-use crate::grid::{coords_to_node, NODE_COORDS, VALID_ACTIONS};
+use crate::grid::{coords_to_node, DISTANCE_MATRIX, NODE_COORDS, VALID_ACTIONS};
 use ndarray::{s, Array, Array3};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use numpy::{IntoPyArray, PyArray3};
@@ -161,6 +161,8 @@ pub struct PacmanGym {
     last_action: Action,
     #[pyo3(get, set)]
     purgatory_pellets: u16,
+    #[pyo3(get, set)]
+    ghost_proximities: u32,
 
     ticks_per_step: u32,
 }
@@ -189,6 +191,7 @@ impl PacmanGym {
     pub fn new(config: &PacmanGymConfiguration) -> Self {
         let mut s = Self {
             purgatory_pellets: 0,
+            ghost_proximities: 0,
             last_score: 0,
             last_action: Action::Stay,
             game_state: GameState::new(),
@@ -277,6 +280,7 @@ impl PacmanGym {
     /// Returns (reward, done).
     pub fn step(&mut self, action: Action) -> (i32, bool) {
         let pellets_before = self.remaining_pellets();
+        let prox_old = self.calc_ghost_proximities();
         // Update Pacman pos
         self.move_one_cell(action);
 
@@ -327,6 +331,15 @@ impl PacmanGym {
                     2 => -20,
                     _ => 0,
                 };
+            }
+        }
+        // Purgatory only
+        if !self.all_ghosts_freed() && self.all_ghosts_not_frightened() {
+            // In purgatory mode, it is advantagous to keep ghosts close together
+            let prox = self.calc_ghost_proximities();
+            if prox != 0 {
+                self.ghost_proximities = prox;
+                reward += (prox_old as i32 - self.ghost_proximities as i32) / 10;
             }
         }
         self.last_score = game_state.curr_score;
@@ -576,5 +589,27 @@ impl PacmanGym {
         }
 
         obs_array
+    }
+
+    pub fn calc_ghost_proximities(&self) -> u32 {
+        self.game_state
+            .ghosts
+            .iter()
+            .map(|g1| {
+                self.game_state
+                    .ghosts
+                    .iter()
+                    .map(|g2| {
+                        DISTANCE_MATRIX[coords_to_node(
+                            loc_to_pos(g1.loc).map(|(a, b)| (a as i8, b as i8)).unwrap_or((0, 0)),
+                        )
+                        .unwrap_or(0)][coords_to_node(
+                            loc_to_pos(g2.loc).map(|(a, b)| (a as i8, b as i8)).unwrap_or((0, 0)),
+                        )
+                        .unwrap_or(0)] as u32
+                    })
+                    .sum::<u32>()
+            })
+            .sum::<u32>()
     }
 }
