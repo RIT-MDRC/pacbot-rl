@@ -334,7 +334,7 @@ impl PacmanGym {
             }
         }
         // Purgatory only
-        if !self.all_ghosts_freed() && self.all_ghosts_not_frightened() {
+        if !self.all_ghosts_freed() && self.all_ghosts_not_frightened() && !self.are_ghosts_close() {
             // In purgatory mode, it is advantagous to keep ghosts close together
             let prox = self.calc_ghost_proximities();
             if prox != 0 {
@@ -373,6 +373,18 @@ impl PacmanGym {
     pub fn all_ghosts_not_frightened(&self) -> bool {
         // are all ghosts not frightened?
         self.game_state.ghosts.iter().all(|g| !g.is_frightened())
+    }
+
+    pub fn are_ghosts_close(&self) -> bool {
+        // are the ghosts collectively close enough?
+        let mut total_distance = 0;
+        let p = self.game_state.pacman_loc;
+        for ghost in self.game_state.ghosts {
+            let g = ghost.loc;
+            total_distance +=  (p.row - g.row).abs() + (p.col - g.col).abs()
+        }
+        // for now, acceptable distance maximum is 30
+        return total_distance < 30
     }
 
     pub fn remaining_pellets(&self) -> u16 {
