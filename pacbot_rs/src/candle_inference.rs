@@ -26,7 +26,7 @@ impl CandleInference {
         .unwrap();
         vm.load(weights_path).unwrap();
 
-        Self { net, gym: PacmanGym::new(false, false), configuration }
+        Self { net, gym: PacmanGym::new(&configuration), configuration }
     }
 
     /// Given a game state, find the reward the model predicts for each action. Indices available
@@ -43,7 +43,7 @@ impl CandleInference {
     ) -> (Direction, [f32; 5]) {
         self.gym.set_state(game_state, ticks_per_step);
 
-        let obs_array = self.gym.obs();
+        let obs_array = self.gym.obs(&self.configuration);
         // 1 if masked, 0 if not
         let action_mask_arr = Tensor::from_slice(
             &action_mask.unwrap_or(self.gym.action_mask()).map(|b| b as u8 as f32),

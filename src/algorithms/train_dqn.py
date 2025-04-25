@@ -18,9 +18,9 @@ from pacbot_rs import PacmanGym
 
 import models
 from policies import EpsilonGreedy, MaxQPolicy
-from replay_buffer import ReplayBuffer, reset_env
+from replay_buffer import ReplayBuffer
 from timing import time_block
-from utils import lerp
+from utils import lerp, reset_env, step_env_until_done, step_env_once, OBS_SHAPE, NUM_ACTIONS, DETERMINISTIC_START_CONFIGURATION
 
 
 hyperparam_defaults = {
@@ -76,10 +76,8 @@ wandb.init(
 
 
 # Initialize the Q network.
-obs_shape = PacmanGym({"random_start": True, "random_ticks": True}).obs_numpy().shape
-num_actions = 5
 model_class = getattr(models, wandb.config.model)
-q_net = model_class(obs_shape, num_actions).to(device)
+q_net = model_class(OBS_SHAPE, NUM_ACTIONS).to(device)
 print(f"q_net has {sum(p.numel() for p in q_net.parameters())} parameters")
 if args.finetune:
     q_net = torch.load(args.finetune, map_location=device)
@@ -87,31 +85,24 @@ if args.finetune:
 
 
 @torch.no_grad()
-def evaluate_episode(max_steps: int = 1000) -> tuple[int, int, bool, int, int]:
+def evaluate_episode(max_steps: int = 1000) -> tuple[int, int, bool, int, int, int, float]:
     """
     Performs a single evaluation episode.
 
-    Returns (score, total_steps, is_board_cleared, pellets_start, pellets_end).
+    Returns (score, total_steps, is_board_cleared, pellets_start, pellets_end, purgatory_pellets, ghost_proximities).
     """
-    gym = PacmanGym({"random_start": False, "random_ticks": False})
-    reset_env(gym)
+    gym = PacmanGym(DETERMINISTIC_START_CONFIGURATION)
     pellets_start = gym.remaining_pellets()
 
     q_net.eval()
     policy = MaxQPolicy(q_net)
 
-    for step_num in range(1, max_steps + 1):
-        obs = torch.from_numpy(gym.obs_numpy()).to(device).unsqueeze(0)
-        action_mask = torch.tensor(gym.action_mask(), device=device).unsqueeze(0)
-        _, done = gym.step(policy(obs, action_mask).item())
-
-        if done:
-            break
+    done, step_num = step_env_until_done(gym, policy, device, max_steps=max_steps)
 
     is_board_cleared = done and gym.lives() == 3
     pellets_end = 0 if is_board_cleared else gym.remaining_pellets()
 
-    return (gym.score(), step_num, is_board_cleared, pellets_start, pellets_end)
+    return (gym.score(), step_num, is_board_cleared, pellets_start, pellets_end, gym.purgatory_pellets, gym.ghost_proximities)
 
 
 def train():
@@ -120,7 +111,7 @@ def train():
         maxlen=wandb.config.replay_buffer_size,
         policy=EpsilonGreedy(
             MaxQPolicy(q_net),
-            num_actions,
+            NUM_ACTIONS,
             wandb.config.initial_epsilon if args.finetune else 1.0,
         ),
         num_parallel_envs=wandb.config.num_parallel_envs,
@@ -154,7 +145,7 @@ def train():
                 obs_batch = torch.stack([item.obs for item in batch])
                 next_obs_batch = torch.stack(
                     [
-                        torch.zeros(obs_shape) if item.next_obs is None else item.next_obs
+                        torch.zeros(OBS_SHAPE) if item.next_obs is None else item.next_obs
                         for item in batch
                     ]
                 )
@@ -227,6 +218,8 @@ def train():
                         cleared_board,
                         pellets_start,
                         pellets_end,
+                        purgatory_pellets,
+                        ghost_proximities,
                     ) = evaluate_episode()
                     metrics.update(
                         eval_episode_score=eval_episode_score,
@@ -234,6 +227,8 @@ def train():
                         cleared_board=int(cleared_board),
                         eval_pellets_start=pellets_start,
                         eval_pellets_end=pellets_end,
+                        purgatory_pellets=purgatory_pellets,
+                        ghost_proximities=ghost_proximities,
                     )
             wandb.log(metrics)
 
@@ -268,10 +263,10 @@ def train():
 
 @torch.no_grad()
 def visualize_agent():
-    gym = PacmanGym({"random_start": False, "random_ticks": False})
-    reset_env(gym)
+    gym = PacmanGym(DETERMINISTIC_START_CONFIGURATION)
 
     q_net.eval()
+    policy = MaxQPolicy(q_net)
 
     print()
     print(f"Step 0")
@@ -281,13 +276,7 @@ def visualize_agent():
     for step_num in itertools.count(1):
         time.sleep(0.1)
 
-        obs = torch.from_numpy(gym.obs_numpy()).to(device)
-        action_values = q_net(obs.unsqueeze(0)).squeeze(0)
-        action_values[~torch.tensor(gym.action_mask())] = -torch.inf
-        action = action_values.argmax().item()
-        with np.printoptions(precision=4, suppress=True):
-            print(f"Q values: {(action_values / reward_scale).numpy(force=True)}  =>  {action}")
-        reward, done = gym.step(action)
+        reward, done = step_env_once(gym, policy, device)
         print("reward:", reward)
 
         print()

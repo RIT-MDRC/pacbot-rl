@@ -10,4 +10,4 @@ __pycache__/
 
 # Artifacts
 wandb/
-checkpoints*/
+src/checkpoints/
